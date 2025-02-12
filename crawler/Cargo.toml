@@ -17,3 +17,4 @@ regex = "1"
 rust-stemmers = "1"
 serde_json = "1.0.138"
 serde = { version = "1.0.217", features = ["derive"] }
+kafka = "0.10.0"
