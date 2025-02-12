@@ -1,0 +1,12 @@
+/Users/lucadibello/Developer/web-explorer/crawler/target/debug/deps/libmac-c7c56103ece745de.rmeta: /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/lib.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/test.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/mem.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/format.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/syntax_ext.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/matches.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/inspect.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/cfg.rs
+
+/Users/lucadibello/Developer/web-explorer/crawler/target/debug/deps/mac-c7c56103ece745de.d: /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/lib.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/test.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/mem.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/format.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/syntax_ext.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/matches.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/inspect.rs /Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/cfg.rs
+
+/Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/lib.rs:
+/Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/test.rs:
+/Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/mem.rs:
+/Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/format.rs:
+/Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/syntax_ext.rs:
+/Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/matches.rs:
+/Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/inspect.rs:
+/Users/lucadibello/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mac-0.1.1/src/cfg.rs:

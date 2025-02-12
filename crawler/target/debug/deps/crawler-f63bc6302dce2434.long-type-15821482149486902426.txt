@@ -1,0 +1,1 @@
+(tokio::sync::mpsc::Sender<requests::http_request::HttpResponse>, tokio::sync::mpsc::Receiver<requests::http_request::HttpResponse>)
