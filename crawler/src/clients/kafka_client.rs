@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use kafka::client::{Compression, KafkaClient as KC, RequiredAcks};
+use kafka::client::{Compression, KafkaClient as KC};
 
 #[derive(Debug)]
 pub struct KafkaClient {
@@ -17,22 +17,26 @@ pub struct KafkaClientConfig {
 
 impl KafkaClient {
     fn new(config: Option<KafkaClientConfig>) -> Self {
-        let client;
-
         // If no config is provided, use default values
         if config.is_none() {
             // Create new client + specify list of valid brokers to use
-            client = KC::new(vec!["localhost:9092".to_string()]);
-        } else {
-            client = KC::new(config.as_ref().unwrap().brokers.clone());
+            // client = KC::new(vec!["localhost:9092".to_string()]);
+
+            // Fatal error: cannot infer default URL for the Kafka broker
+            panic!("No Kafka broker URL provided");
         }
+        // create client here
+        let client = KC::new(config.as_ref().unwrap().brokers.clone());
 
         // Create KafkaClient instance
         KafkaClient { client, config }
     }
 
     fn publish(&self, message: String, topic: String) {
-        // Publish message to Kafka
-        self.client.publ
+        // FIXME: Publish a single message to a Kafka topic
+    }
+
+    fn publish_bulk(&self, messages: Vec<String>, topic: String) {
+        // FIXME: Publish multiple messages on a Kafka topic
     }
 }
