@@ -1,7 +1,3 @@
-use tokio::io::AsyncWriteExt;
-use tokio::{fs::OpenOptions, sync::mpsc};
-
-use crate::agents::crawler_writer::CrawlerWriter;
 use crate::{
     clients::redis_client::RedisClient,
     requests::{
@@ -14,7 +10,6 @@ use std::collections::LinkedList;
 // Idea: make request, collect information, dump to file
 pub struct CrawlerAgent {
     queue: LinkedList<HttpRequest>,
-    pub tx_channel: Option<mpsc::Sender<HttpResponse>>,
     pub redis_conn: RedisClient,
 }
 
@@ -22,7 +17,6 @@ impl CrawlerAgent {
     pub fn new() -> Self {
         CrawlerAgent {
             queue: LinkedList::<HttpRequest>::new(),
-            tx_channel: None,
             redis_conn: RedisClient::new(),
         }
     }
@@ -63,9 +57,7 @@ impl CrawlerAgent {
                 }
                 self.redis_conn.mark_visited(link.as_str()).unwrap();
 
-                println!("[SENDER] Sending response to writer");
-                let channel = self.tx_channel.as_ref().ok_or("Channel not found")?;
-                channel.send(res.clone()).await.unwrap();
+                println!("[SENDER] Sending response to queue");
 
                 // Enqueue the link (assuming HttpRequest::new expects an owned String)
                 println!("Enqueueing link: {}", link);
@@ -88,22 +80,6 @@ impl CrawlerAgent {
     /// 4. Handles errors and processes responses (e.g., dumping to a file).
     /// 5. Terminates when the queue is empty.
     pub async fn start(&mut self) {
-        // Create a channel for writing responses to a file.
-        let (tx, rx) = mpsc::channel::<HttpResponse>(100);
-        self.tx_channel = Some(tx);
-
-        // Start the writer task concurrently.
-        let writer_handle = tokio::spawn(async move {
-            let mut writer = CrawlerWriter::new(rx);
-            writer
-                .listen_and_write(
-                    std::env::var("OUTPUT_FILE")
-                        .unwrap_or_else(|_| "output.jsonl".to_string())
-                        .as_str(),
-                )
-                .await;
-        });
-
         // Continue processing while there are requests in the queue.
         while !self.queue.is_empty() {
             match self.execute().await {
@@ -119,12 +95,5 @@ impl CrawlerAgent {
                 }
             }
         }
-
-        // Drop the sender to close the channel.
-        // This signals the writer that no more responses will be sent.
-        self.tx_channel.take();
-
-        // Wait for the writer task to finish.
-        writer_handle.await.unwrap();
     }
 }

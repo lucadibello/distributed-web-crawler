@@ -1,5 +1,4 @@
 pub mod crawler_agent;
-pub mod crawler_writer;
 
 use crate::requests::request::Request;
 
