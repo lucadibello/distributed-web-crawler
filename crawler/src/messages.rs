@@ -1,7 +1,6 @@
 use std::{env, error::Error};
 
 use lapin::message::Delivery;
-use log::info;
 use serde::Deserialize;
 
 pub struct QueueMessage {
@@ -11,11 +10,11 @@ pub struct QueueMessage {
 
 #[derive(Debug, Deserialize)]
 pub struct JsonMessage {
-    pub lat: f64,
-    pub lon: f64,
-    pub timestamp: i64,
-    pub device_id: String,
-    pub bumpiness: i16,
+    pub domain: String,
+    pub full_url: String,
+    pub body: String,
+    pub headers: Vec<(String, String)>,
+    pub timestamp: String,
 }
 
 impl QueueMessage {

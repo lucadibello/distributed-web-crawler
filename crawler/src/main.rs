@@ -31,14 +31,13 @@ async fn main() {
         // E-commerce and marketplaces
         "https://www.amazon.com/",
         "https://www.ebay.com/",
-        // Example websites for testing (replace if needed)
-        "http://example.com",
-        "http://example.com/1",
-        "http://example.com/2",
     ];
 
     // Set the number of agents (threads) you want to run concurrently.
-    let n_agents = 4;
+    let n_agents = std::env::var("N_AGENTS")
+        .unwrap_or("4".to_string())
+        .parse::<usize>()
+        .unwrap();
 
     // Calculate the approximate number of seeds per agent.
     let chunk_size = seeds.len().div_ceil(n_agents);
