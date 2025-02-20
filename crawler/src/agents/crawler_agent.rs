@@ -1,5 +1,5 @@
 use crate::{
-    clients::redis_client::RedisClient,
+    clients::{rabbit_client::RabbitClient, redis_client::RedisClient},
     requests::{
         http_request::{HttpRequest, HttpResponse},
         request::Request,
@@ -10,19 +10,21 @@ use std::collections::LinkedList;
 // Idea: make request, collect information, dump to file
 pub struct CrawlerAgent {
     queue: LinkedList<HttpRequest>,
+    rabbit_client_ref: &'static RabbitClient,
     pub redis_conn: RedisClient,
 }
 
 impl CrawlerAgent {
-    pub fn new() -> Self {
+    pub fn new(client_ref: &'static RabbitClient) -> Self {
         CrawlerAgent {
+            rabbit_client_ref: client_ref,
             queue: LinkedList::<HttpRequest>::new(),
             redis_conn: RedisClient::new(),
         }
     }
 
-    pub fn new_with_seeds(seed: Vec<&str>) -> Self {
-        let mut agent = CrawlerAgent::new();
+    pub fn new_with_seeds(client_ref: &'static RabbitClient, seed: Vec<&str>) -> Self {
+        let mut agent = CrawlerAgent::new(client_ref);
 
         for url in seed {
             agent.push(HttpRequest::new(String::from(url)));
@@ -57,7 +59,7 @@ impl CrawlerAgent {
                 }
                 self.redis_conn.mark_visited(link.as_str()).unwrap();
 
-                println!("[SENDER] Sending response to queue");
+                // FIXME: Append message to rabbitmq processing queue
 
                 // Enqueue the link (assuming HttpRequest::new expects an owned String)
                 println!("Enqueueing link: {}", link);

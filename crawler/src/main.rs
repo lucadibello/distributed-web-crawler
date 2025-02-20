@@ -45,6 +45,16 @@ async fn main() {
     // Create a vector to hold all the agent tasks.
     let mut handles = Vec::new();
 
+    // Client single rabbitmq client
+    let rabbit = crate::clients::rabbit_client::build().await;
+    if rabbit.is_err() {
+        eprintln!("Failed to connect to RabbitMQ: {:?}", rabbit.err());
+        return;
+    }
+
+    // Now, get the client from the Result
+    let client = rabbit.unwrap();
+
     // For each chunk, spawn a crawler agent.
     for chunk in seeds.chunks(chunk_size) {
         // Convert the chunk of seeds (which are String) into Vec<&str> for the agent.
@@ -53,9 +63,10 @@ async fn main() {
         // Spawn the agent task.
         let handle = tokio::task::spawn(async move {
             // Each agent gets its own seeds.
-            let mut agent = CrawlerAgent::new_with_seeds(seeds_chunk);
+            let mut agent = CrawlerAgent::new_with_seeds(&client, seeds_chunk);
             agent.start().await;
         });
+
         handles.push(handle);
     }
 
