@@ -1,1 +1,0 @@
-impl std::future::Future<Output = std::result::Result<<T as requests::request::Request>::Output, std::string::String>>
