@@ -1,24 +1,29 @@
 use lapin::options::QueueDeclareOptions;
 use lapin::{Channel, Connection, ConnectionProperties, Queue};
-
-use log::{debug, info};
 use std::env;
 use std::error::Error;
+use tracing::{debug, info, instrument, span, Level};
 
 pub struct RabbitClient {
     conn: Connection,
     channel: Channel,
+    queue_name: String,
 }
 
 impl RabbitClient {
     /// Creates a new RabbitMQ client instance.
-    fn new(conn: Connection, channel: Channel) -> Self {
-        RabbitClient { conn, channel }
+    fn new(conn: Connection, channel: Channel, queue_name: String) -> Self {
+        RabbitClient {
+            conn,
+            channel,
+            queue_name,
+        }
     }
 
     /// Establishes a connection to RabbitMQ, creates a channel, and declares a queue.
+    #[instrument(name = "RabbitMQ Setup", skip_all)]
     pub async fn build() -> Result<Self, Box<dyn Error>> {
-        // Load environment variables, propagating errors instead of panicking
+        // Load environment variables
         let user = env::var("RABBIT_USER")?;
         let password = env::var("RABBIT_PASSWORD")?;
         let host = env::var("RABBIT_HOST")?;
@@ -26,26 +31,29 @@ impl RabbitClient {
         let queue_name = env::var("RABBIT_QUEUE")?;
         let crawler_type = env::var("CRAWLER_TYPE")?;
 
+        // Get the current span and record fields to it individually.
+        let span = tracing::Span::current();
+        span.record("rabbit.host", &host);
+        span.record("rabbit.port", &port);
+        span.record("rabbit.queue", &queue_name);
+
+        info!("Starting RabbitMQ client setup");
+
         let addr = format!("amqp://{}:{}@{}:{}", user, password, host, port);
-        info!("Attempting to connect to RabbitMQ at {}", host);
+        info!("Connecting to RabbitMQ");
 
-        // Connect to RabbitMQ, using `?` for concise error handling
         let conn = Connection::connect(&addr, ConnectionProperties::default()).await?;
-        info!("Successfully connected to RabbitMQ");
+        info!("Connection successful");
 
-        // Create a channel from the connection
-        debug!("Creating RabbitMQ channel...");
+        debug!("Creating channel");
         let channel = conn.create_channel().await?;
-        debug!("Channel created successfully");
 
-        // Get current Thread Id for consumer tag
-        let consumer_tag = format!("crawler-{}-{}", crawler_type.trim(), -1);
-        debug!(
-            "Declaring queue '{}' with consumer tag '{}'",
-            &queue_name, &consumer_tag
-        );
+        let consumer_tag = format!("crawler-{}", crawler_type.trim());
 
-        // Declare queue options. Making it durable is often a good default.
+        let queue_span = span!(Level::DEBUG, "Queue Declaration", consumer_tag = %consumer_tag);
+        let _enter = queue_span.enter();
+
+        debug!("Declaring queue");
         let queue_options = QueueDeclareOptions {
             durable: true,
             exclusive: false,
@@ -53,24 +61,30 @@ impl RabbitClient {
             ..Default::default()
         };
 
-        // Declare the queue and wait for the confirmation from the server
         let _queue: Queue = channel
             .queue_declare(&queue_name, queue_options, Default::default())
             .await?;
 
-        info!("Queue '{}' declared successfully", &queue_name);
+        info!("Queue declared successfully");
 
-        // Return the constructed client
-        Ok(RabbitClient::new(conn, channel))
+        Ok(RabbitClient::new(conn, channel, queue_name))
     }
 
+    /// Publishes a message to the declared queue.
+    #[instrument(
+        name = "Enqueue Message",
+        skip(self, payload),
+        fields(
+            rabbit.queue = %self.queue_name,
+            msg.size = payload.len()
+        )
+    )]
     pub async fn enqueue(&self, payload: String) -> Result<(), Box<dyn Error>> {
-        debug!("Publishing message to RabbitMQ queue");
-        // Publish the message to the queue
+        debug!("Publishing message");
         self.channel
             .basic_publish(
                 "",
-                &env::var("RABBIT_QUEUE")?,
+                &self.queue_name,
                 lapin::options::BasicPublishOptions::default(),
                 payload.as_bytes(),
                 lapin::BasicProperties::default(),
@@ -82,13 +96,12 @@ impl RabbitClient {
     }
 
     /// Gracefully closes the channel and the connection.
+    #[instrument(name = "Close Connection", skip(self))]
     pub async fn close(self) -> Result<(), Box<dyn Error>> {
-        info!("Closing RabbitMQ channel and connection...");
-        // Close the channel first
+        info!("Closing channel and connection");
         self.channel.close(200, "Goodbye").await?;
-        // Then close the connection
         self.conn.close(200, "Bye").await?;
-        info!("Connection and channel closed successfully.");
+        info!("Connection closed successfully.");
         Ok(())
     }
 }

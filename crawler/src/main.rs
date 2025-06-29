@@ -12,8 +12,10 @@ async fn main() {
 
     // Fetch crawler type from environment variable or default to "default"
     let crawler_type = std::env::var("CRAWLER_TYPE").unwrap_or_else(|_| "default".to_string());
+
     // Fetch crawler object type from environment variable or assign default prompt
-    let object_type = std::env::var("CRAWLER_OBJECT_TYPE").unwrap_or_else(|_| "You are a web crawler. You will scrape this website and extract all the relevant inforatino from it. Keep the information in a structured format.".to_string());
+    // FIXME: Implement this when we have a proper prompt system
+    // let crawler_objective = std::env::var("CRAWLER_OBJECT_TYPE").unwrap_or_else(|_| "You are a web crawler. You will scrape this website and extract all the relevant inforatino from it. Keep the information in a structured format.".to_string());
 
     // Define list of seeds where to start scraping
     let seeds = [
