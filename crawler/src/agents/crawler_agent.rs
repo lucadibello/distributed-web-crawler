@@ -5,37 +5,51 @@ use crate::{
         request::Request,
     },
 };
-use std::{
-    collections::LinkedList,
-    sync::{Arc, Mutex},
-};
+use std::collections::LinkedList;
 
-type ThreadSafeRabbitClient = Arc<Mutex<RabbitClient>>;
-
-pub struct CrawlerAgent<'client> {
+pub struct CrawlerAgent {
+    name: String,
     queue: LinkedList<HttpRequest>,
-    rabbit_client: &'client ThreadSafeRabbitClient,
-    redis_conn: RedisClient,
+    rabbit_conn: std::boxed::Box<RabbitClient>,
+    redis_conn: std::boxed::Box<RedisClient>,
 }
 
-impl<'client> CrawlerAgent<'client> {
-    fn new(client_ref: &'client ThreadSafeRabbitClient) -> Self {
+impl CrawlerAgent {
+    fn new(name: String, client_ref: RabbitClient, redis_client: RedisClient) -> Self {
         CrawlerAgent {
-            rabbit_client: client_ref,
+            name,
+            rabbit_conn: Box::new(client_ref),
             queue: LinkedList::<HttpRequest>::new(),
-            redis_conn: RedisClient::new(),
+            redis_conn: Box::new(redis_client),
         }
     }
 
     // Create crawler agent with a set of initial seeds
-    pub fn new_with_seeds(client_ref: &'client ThreadSafeRabbitClient, seed: Vec<&str>) -> Self {
-        let mut agent = CrawlerAgent::new(client_ref);
+    pub async fn new_with_seeds(
+        id: u16,
+        type_name: String,
+        seed: Vec<&str>,
+    ) -> Result<Self, String> {
+        // generate unique identigier for the agent
+        let agent_name = format!("crawler-{}-{}", type_name, id);
 
+        // create rabbitmq and redis clients
+        let rabbit = RabbitClient::build()
+            .await
+            .map_err(|e| format!("Failed to create RabbitMQ client: {}", e))?;
+        let redis =
+            RedisClient::build().map_err(|e| format!("Failed to create Redis client: {}", e))?;
+
+        // intialize the agent with both clients
+        let mut agent = CrawlerAgent::new(agent_name, rabbit, redis);
+
+        // push assigned seed URLs into the queue
         for url in seed {
             agent.push(HttpRequest::new(String::from(url)));
         }
 
-        agent
+        // return the agent
+        Ok(agent)
     }
 
     // Handle new request by pushing it to the queue.
@@ -60,7 +74,7 @@ impl<'client> CrawlerAgent<'client> {
                 }
                 self.redis_conn.mark_visited(link.as_str()).unwrap();
 
-                // FIXME: Append message to rabbitmq processing queue
+                // FIXME: enqueue result to RabbitMQ
 
                 // Enqueue the link (assuming HttpRequest::new expects an owned String)
                 println!("Enqueueing link: {}", link);

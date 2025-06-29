@@ -7,9 +7,6 @@ use std::error::Error;
 
 pub struct RabbitClient {
     conn: Connection,
-    // queue: String,
-    // tag: String,
-    // The channel is now properly managed within the client
     channel: Channel,
 }
 
@@ -27,7 +24,7 @@ impl RabbitClient {
         let host = env::var("RABBIT_HOST")?;
         let port = env::var("RABBIT_PORT")?;
         let queue_name = env::var("RABBIT_QUEUE")?;
-        let consumer_tag = env::var("CONSUMER_NAME")?;
+        let crawler_type = env::var("CRAWLER_TYPE")?;
 
         let addr = format!("amqp://{}:{}@{}:{}", user, password, host, port);
         info!("Attempting to connect to RabbitMQ at {}", host);
@@ -41,6 +38,8 @@ impl RabbitClient {
         let channel = conn.create_channel().await?;
         debug!("Channel created successfully");
 
+        // Get current Thread Id for consumer tag
+        let consumer_tag = format!("crawler-{}-{}", crawler_type.trim(), -1);
         debug!(
             "Declaring queue '{}' with consumer tag '{}'",
             &queue_name, &consumer_tag
@@ -63,6 +62,23 @@ impl RabbitClient {
 
         // Return the constructed client
         Ok(RabbitClient::new(conn, channel))
+    }
+
+    pub async fn enqueue(&self, payload: String) -> Result<(), Box<dyn Error>> {
+        debug!("Publishing message to RabbitMQ queue");
+        // Publish the message to the queue
+        self.channel
+            .basic_publish(
+                "",
+                &env::var("RABBIT_QUEUE")?,
+                lapin::options::BasicPublishOptions::default(),
+                payload.as_bytes(),
+                lapin::BasicProperties::default(),
+            )
+            .await?
+            .await?;
+        debug!("Message published successfully");
+        Ok(())
     }
 
     /// Gracefully closes the channel and the connection.

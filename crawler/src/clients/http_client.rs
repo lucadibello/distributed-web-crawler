@@ -82,11 +82,6 @@ impl HttpClient {
 
 /// Returns a default HTTP client (without a custom timeout).
 pub fn get_default_http_client() -> HttpClient {
-    // HttpClient {
-    //     client: Client::new(),
-    //     timeout: None,
-    // }
-
     // Create a default configuration with no custom user agent, proxy, or timeout.
     let config = HttpClientConfig {
         user_agent: None,

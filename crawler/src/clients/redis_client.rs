@@ -7,7 +7,7 @@ pub struct RedisClient {
 }
 
 impl RedisClient {
-    pub fn new() -> Self {
+    pub fn build() -> Result<Self, String> {
         // Load environment variables from .env file
         dotenv().ok();
 
@@ -20,12 +20,14 @@ impl RedisClient {
         );
 
         // Create a Redis client and establish a connection
-        let client = redis::Client::open(redis_url).expect("Failed to connect to Redis");
+        let client = redis::Client::open(redis_url.clone())
+            .map_err(|e| format!("Failed to create Redis client: {}", e))?;
+
         let conn = client
             .get_connection()
-            .expect("Failed to get Redis connection");
+            .map_err(|e| format!("Failed to connect to Redis at {}: {}", redis_url, e))?;
 
-        RedisClient { conn }
+        Ok(RedisClient { conn })
     }
 
     /// Checks if a URL has already been visited by checking the existence of a field in the "visited_urls" hash.
