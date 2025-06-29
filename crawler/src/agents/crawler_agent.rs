@@ -5,25 +5,30 @@ use crate::{
         request::Request,
     },
 };
-use std::collections::LinkedList;
+use std::{
+    collections::LinkedList,
+    sync::{Arc, Mutex},
+};
 
-// Idea: make request, collect information, dump to file
-pub struct CrawlerAgent {
+type ThreadSafeRabbitClient = Arc<Mutex<RabbitClient>>;
+
+pub struct CrawlerAgent<'client> {
     queue: LinkedList<HttpRequest>,
-    rabbit_client_ref: &'static RabbitClient,
-    pub redis_conn: RedisClient,
+    rabbit_client: &'client ThreadSafeRabbitClient,
+    redis_conn: RedisClient,
 }
 
-impl CrawlerAgent {
-    pub fn new(client_ref: &'static RabbitClient) -> Self {
+impl<'client> CrawlerAgent<'client> {
+    fn new(client_ref: &'client ThreadSafeRabbitClient) -> Self {
         CrawlerAgent {
-            rabbit_client_ref: client_ref,
+            rabbit_client: client_ref,
             queue: LinkedList::<HttpRequest>::new(),
             redis_conn: RedisClient::new(),
         }
     }
 
-    pub fn new_with_seeds(client_ref: &'static RabbitClient, seed: Vec<&str>) -> Self {
+    // Create crawler agent with a set of initial seeds
+    pub fn new_with_seeds(client_ref: &'client ThreadSafeRabbitClient, seed: Vec<&str>) -> Self {
         let mut agent = CrawlerAgent::new(client_ref);
 
         for url in seed {
@@ -33,16 +38,12 @@ impl CrawlerAgent {
         agent
     }
 
-    /// Adds a new request to the queue.
+    // Handle new request by pushing it to the queue.
     pub fn push(&mut self, req: HttpRequest) {
         self.queue.push_back(req);
     }
 
-    /// Executes one request from the queue:
-    /// - It pops a request from the queue,
-    /// - Executes the request asynchronously,
-    /// - Enrolls discovered links into the queue,
-    /// - And returns the HTTP response.
+    // Execute one queued request
     async fn execute(&mut self) -> Result<HttpResponse, String> {
         // Pull new request from the queue. The request is removed from the queue.
         let req = self.queue.pop_front().ok_or("Queue is empty")?;
@@ -73,20 +74,13 @@ impl CrawlerAgent {
         Ok(res)
     }
 
-    /// Starts the crawler agent.
-    ///
-    /// This is the core loop of the crawler that:
-    /// 1. Logs the start of the agent.
-    /// 2. Loops while there are requests in the queue.
-    /// 3. Executes each request.
-    /// 4. Handles errors and processes responses (e.g., dumping to a file).
-    /// 5. Terminates when the queue is empty.
+    // Crawler main loop
     pub async fn start(&mut self) {
         // Continue processing while there are requests in the queue.
         while !self.queue.is_empty() {
             match self.execute().await {
                 Ok(response) => {
-                    // Optionally process the response here.
+                    // FIXME: register response somewhere!
                     println!(
                         "Processed response with status code: {}",
                         response.status_code

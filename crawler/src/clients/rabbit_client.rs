@@ -1,119 +1,78 @@
-use lapin::options::{BasicAckOptions, BasicConsumeOptions, QueueDeclareOptions};
-use lapin::{types::FieldTable, Connection, ConnectionProperties};
+use lapin::options::QueueDeclareOptions;
+use lapin::{Channel, Connection, ConnectionProperties, Queue};
 
-use crate::messages::{JsonMessage, MessageParser, QueueMessage};
-use futures_lite::stream::StreamExt;
-
-use log::{debug, error, info};
+use log::{debug, info};
 use std::env;
 use std::error::Error;
-use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
 
 pub struct RabbitClient {
     conn: Connection,
-
-    queue: String,
-    tag: String,
+    // queue: String,
+    // tag: String,
+    // The channel is now properly managed within the client
+    channel: Channel,
 }
 
 impl RabbitClient {
-    pub fn new(conn: Connection, queue: String, tag: String) -> Self {
-        RabbitClient { conn, queue, tag }
+    /// Creates a new RabbitMQ client instance.
+    fn new(conn: Connection, channel: Channel) -> Self {
+        RabbitClient { conn, channel }
     }
 
-    // close connection
-    pub async fn close(&self) -> Result<(), Box<(dyn Error)>> {
-        // try closing the connection
-        self.conn.close(200, "Bye").await?;
-        // return Ok if everything went well
-        Ok(())
-    }
+    /// Establishes a connection to RabbitMQ, creates a channel, and declares a queue.
+    pub async fn build() -> Result<Self, Box<dyn Error>> {
+        // Load environment variables, propagating errors instead of panicking
+        let user = env::var("RABBIT_USER")?;
+        let password = env::var("RABBIT_PASSWORD")?;
+        let host = env::var("RABBIT_HOST")?;
+        let port = env::var("RABBIT_PORT")?;
+        let queue_name = env::var("RABBIT_QUEUE")?;
+        let consumer_tag = env::var("CONSUMER_NAME")?;
 
-    pub async fn consume(&self, sender: &Sender<Arc<JsonMessage>>) -> Result<(), Box<dyn Error>> {
-        // create a channel
+        let addr = format!("amqp://{}:{}@{}:{}", user, password, host, port);
+        info!("Attempting to connect to RabbitMQ at {}", host);
+
+        // Connect to RabbitMQ, using `?` for concise error handling
+        let conn = Connection::connect(&addr, ConnectionProperties::default()).await?;
+        info!("Successfully connected to RabbitMQ");
+
+        // Create a channel from the connection
         debug!("Creating RabbitMQ channel...");
-        let channel = self.conn.create_channel().await?;
-        debug!("queue name: {}, tag: {}", &self.queue, &self.tag);
+        let channel = conn.create_channel().await?;
+        debug!("Channel created successfully");
 
-        // declare the queue we want to consume from
+        debug!(
+            "Declaring queue '{}' with consumer tag '{}'",
+            &queue_name, &consumer_tag
+        );
+
+        // Declare queue options. Making it durable is often a good default.
         let queue_options = QueueDeclareOptions {
+            durable: true,
+            exclusive: false,
             auto_delete: false,
             ..Default::default()
         };
 
-        let result = channel
-            .queue_declare(&self.queue, queue_options, Default::default())
-            .await?;
-        info!("Declared queue: {:?}", result);
-
-        // Start consuming messages
-        let mut consumer = channel
-            .basic_consume(
-                &self.queue,
-                &self.tag,
-                BasicConsumeOptions::default(),
-                FieldTable::default(),
-            )
+        // Declare the queue and wait for the confirmation from the server
+        let _queue: Queue = channel
+            .queue_declare(&queue_name, queue_options, Default::default())
             .await?;
 
-        info!("Declared queue");
+        info!("Queue '{}' declared successfully", &queue_name);
 
-        // Start consuming messages
-        info!("Consuming messages...");
-        while let Some(delivery) = consumer.next().await {
-            let delivery = delivery.expect("error in consumer");
+        // Return the constructed client
+        Ok(RabbitClient::new(conn, channel))
+    }
 
-            // Ack the message to remove it from the queue
-            delivery.ack(BasicAckOptions::default()).await?;
-
-            // We wrap the delivered message into a QueueMessage struct
-            let msg = QueueMessage::new(delivery).parse_message();
-            if let Err(err) = msg {
-                error!("Failed to parse message: {:?}", err);
-                continue;
-            }
-            let msg = Arc::new(msg.unwrap());
-
-            // Pass the message to the sender
-            if sender.send(msg).await.is_err() {
-                error!("Failed to send message to sender");
-            }
-        }
-
+    /// Gracefully closes the channel and the connection.
+    pub async fn close(self) -> Result<(), Box<dyn Error>> {
+        info!("Closing RabbitMQ channel and connection...");
+        // Close the channel first
+        self.channel.close(200, "Goodbye").await?;
+        // Then close the connection
+        self.conn.close(200, "Bye").await?;
+        info!("Connection and channel closed successfully.");
         Ok(())
     }
-}
-
-pub async fn build() -> Result<RabbitClient, Box<dyn Error>> {
-    // Load env variables
-    let user = env::var("RABBIT_USER").unwrap();
-    let password = env::var("RABBIT_PASSWORD").unwrap();
-    let host = env::var("RABBIT_HOST").unwrap();
-    let port = env::var("RABBIT_PORT").unwrap();
-
-    // Load queue and exchange
-    let queue = env::var("RABBIT_QUEUE").unwrap();
-    let tag = env::var("CONSUMER_NAME").unwrap();
-
-    // Build RabbitMQ address
-    let addr = format!("amqp://{}:{}@{}:{}", user, password, host, port);
-
-    // Log the connection attempt
-    info!("Attempting to connect to RabbitMQ at {}", addr);
-
-    // Connect to RabbitMQ
-    let conn = match Connection::connect(&addr, ConnectionProperties::default()).await {
-        Ok(conn) => {
-            info!("Successfully connected to RabbitMQ");
-            Ok(conn)
-        }
-        Err(e) => {
-            error!("Failed to connect to RabbitMQ: {}", e);
-            Err(Box::new(e))
-        }
-    };
-
-    // return struct with connection
-    Ok(RabbitClient::new(conn?, queue, tag))
 }
