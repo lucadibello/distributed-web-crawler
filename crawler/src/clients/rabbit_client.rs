@@ -1,22 +1,27 @@
-use lapin::options::QueueDeclareOptions;
+use futures_lite::StreamExt;
+use lapin::options::{BasicConsumeOptions, QueueDeclareOptions};
+use lapin::types::FieldTable;
 use lapin::{Channel, Connection, ConnectionProperties, Queue};
 use std::env;
 use std::error::Error;
 use tracing::{debug, info, instrument, span, Level};
 
+#[allow(dead_code)]
 pub struct RabbitClient {
     conn: Connection,
     channel: Channel,
     queue_name: String,
+    consumer_tag: String,
 }
 
 impl RabbitClient {
     /// Creates a new RabbitMQ client instance.
-    fn new(conn: Connection, channel: Channel, queue_name: String) -> Self {
+    fn new(conn: Connection, channel: Channel, queue_name: String, consumer_tag: String) -> Self {
         RabbitClient {
             conn,
             channel,
             queue_name,
+            consumer_tag,
         }
     }
 
@@ -67,7 +72,7 @@ impl RabbitClient {
 
         info!("Queue declared successfully");
 
-        Ok(RabbitClient::new(conn, channel, queue_name))
+        Ok(RabbitClient::new(conn, channel, queue_name, consumer_tag))
     }
 
     /// Publishes a message to the declared queue.
@@ -102,6 +107,52 @@ impl RabbitClient {
         self.channel.close(200, "Goodbye").await?;
         self.conn.close(200, "Bye").await?;
         info!("Connection closed successfully.");
+        Ok(())
+    }
+
+    /// Consumes messages from the declared queue.
+    #[instrument(name = "Consume Messages", skip(self, on_message))]
+    pub async fn consume<F>(&self, on_message: F) -> Result<(), Box<dyn Error>>
+    where
+        F: Fn(Vec<u8>) -> Result<(), Box<dyn Error>> + Send + Sync + 'static,
+    {
+        info!("Starting message consumption");
+        let mut consumer = self
+            .channel
+            .basic_consume(
+                &self.queue_name,
+                &self.consumer_tag,
+                BasicConsumeOptions::default(),
+                FieldTable::default(),
+            )
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to start consumer: {}", e);
+                Box::new(e) as Box<dyn Error>
+            })?;
+
+        while let Some(delivery) = consumer.next().await {
+            let delivery = delivery.expect("error in consumer");
+            let message_content = delivery.data.clone();
+            debug!("Received message: {:?}", delivery.data);
+
+            match on_message(message_content) {
+                Ok(_) => {
+                    delivery
+                        .ack(lapin::options::BasicAckOptions::default())
+                        .await?;
+                    debug!("Message acknowledged");
+                }
+                Err(e) => {
+                    eprintln!("Error processing message: {}", e);
+                    delivery
+                        .nack(lapin::options::BasicNackOptions::default())
+                        .await?;
+                    debug!("Message nacked");
+                }
+            }
+        }
+        info!("Message consumption stopped");
         Ok(())
     }
 }

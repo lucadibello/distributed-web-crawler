@@ -2,55 +2,53 @@ use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::{Client, Error, Proxy};
 use std::time::Duration;
 use tokio::time;
+use tracing::{debug, error, info, instrument, warn};
 
 pub struct HttpClientConfig {
-    /// Optional custom user agent.
     pub user_agent: Option<String>,
-    /// Optional proxy URL (e.g., "http://127.0.0.1:8080").
     pub proxy: Option<String>,
-    /// Optional timeout for requests.
     pub timeout: Option<Duration>,
-    // Additional configuration options (e.g., redirect policy, default headers) can be added here.
 }
 
-/// A simple HTTP client wrapper that supports useful features for an HTTP crawler.
+// A simple HTTP client wrapper that supports useful features for an HTTP crawler.
 #[derive(Debug)]
 pub struct HttpClient {
     client: Client,
-    /// We store the timeout so we can wrap GET requests explicitly.
+    // We store the timeout so we can wrap GET requests explicitly.
     timeout: Option<Duration>,
 }
 
 impl HttpClient {
-    /// Creates a new `HttpClient` using the provided configuration.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if building the underlying reqwest client fails.
+    // Creates a new `HttpClient` using the provided configuration.
+    #[instrument(skip(config))]
     pub fn new_with_config(config: HttpClientConfig) -> Result<Self, Error> {
         let mut builder = Client::builder();
 
         // Set timeout if provided. (This sets a default timeout for all requests.)
         if let Some(timeout) = config.timeout {
+            info!("Setting HTTP client timeout to {:?}", timeout);
             builder = builder.timeout(timeout);
         }
 
         // Set proxy if provided.
-        if let Some(proxy_url) = config.proxy {
-            builder = builder.proxy(Proxy::all(&proxy_url)?);
+        if let Some(proxy_url) = &config.proxy {
+            info!("Setting HTTP client proxy to {}", proxy_url);
+            builder = builder.proxy(Proxy::all(proxy_url)?);
         }
 
         // Set default headers (e.g., custom user agent) if provided.
-        if let Some(user_agent) = config.user_agent {
+        if let Some(user_agent) = &config.user_agent {
+            info!("Setting HTTP client user agent to {}", user_agent);
             let mut headers = HeaderMap::new();
             headers.insert(
                 USER_AGENT,
-                HeaderValue::from_str(&user_agent).expect("Invalid user agent header value"),
+                HeaderValue::from_str(user_agent).expect("Invalid user agent header value"),
             );
             builder = builder.default_headers(headers);
         }
 
         // Build the reqwest client.
+        debug!("Building HTTP client");
         let client = builder.build()?;
         Ok(HttpClient {
             client,
@@ -58,9 +56,10 @@ impl HttpClient {
         })
     }
 
-    /// Sends an asynchronous GET request to the specified URL with an explicit timeout.
-    ///
-    /// If a timeout is configured, the request will error if it takes longer than that duration.
+    // Sends an asynchronous GET request to the specified URL with an explicit timeout.
+    //
+    // If a timeout is configured, the request will error if it takes longer than that duration.
+    #[instrument(skip(self))]
     pub async fn get(
         &self,
         url: &str,
@@ -70,12 +69,19 @@ impl HttpClient {
         let request_future = self.client.get(url).send();
 
         // Wrap the GET request in a Tokio timeout.
+        debug!("Sending GET request to {}", url);
         match time::timeout(timeout_duration, request_future).await {
-            Ok(result) => result.map_err(|e| e.into()),
-            Err(_) => Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Request timed out",
-            ))),
+            Ok(result) => {
+                debug!("GET request to {} completed successfully", url);
+                result.map_err(|e| e.into())
+            }
+            Err(_) => {
+                warn!("GET request to {} timed out", url);
+                Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Request timed out",
+                )))
+            }
         }
     }
 }
@@ -92,7 +98,7 @@ pub fn get_default_http_client() -> HttpClient {
     match HttpClient::new_with_config(config) {
         Ok(client) => client,
         Err(err) => {
-            eprintln!("Failed to create default HTTP client: {:?}", err);
+            error!("Failed to create default HTTP client: {:?}", err);
             panic!("Cannot continue without a valid HTTP client");
         }
     }

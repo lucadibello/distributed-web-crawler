@@ -1,5 +1,4 @@
 services:
-  # Fast in-memory storage to keep track of which websites have been already scraped
   redis:
     image: redis:alpine
     container_name: redis
@@ -10,15 +9,16 @@ services:
     restart: always
 
   rabbit:
-    image: rabbitmq:4
+    image: rabbitmq:4-management
+    container_name: rabbitmq
     ports:
       - "5672:5672" # AMQP protocol for messaging
       - "15672:15672" # Management UI
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq/
     environment:
-      - RABBITMQ_DEFAULT_USER=user
-      - RABBITMQ_DEFAULT_PASS=password
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
 
   # Zookeeper (Kafka dependency)
   # zookeeper:

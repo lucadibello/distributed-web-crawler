@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::{
     clients::http_client::{get_default_http_client, HttpClient},
@@ -10,6 +11,7 @@ use crate::{
 pub struct HttpRequest {
     pub target: String,
     pub client: Option<HttpClient>,
+    pub depth: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,24 +29,44 @@ pub struct HttpResponse {
     pub extra: Option<ExtraHttpResponseFields>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct PageData {
+    pub url: String,
+    pub title: String,
+    pub status_code: u16,
+    pub headers: Vec<String>,
+    pub meta: Vec<String>,
+    pub links: Vec<String>,
+    pub body: String,
+}
+
 impl Request for HttpRequest {
     type Output = HttpResponse;
 
-    fn new(target: String) -> Self {
+    #[instrument]
+    fn new(target: String, depth: u32) -> Self {
+        info!("Creating new HTTP request for target: {} at depth {}", target, depth);
         HttpRequest {
             target,
             client: Some(get_default_http_client()),
+            depth,
         }
     }
 
+    #[instrument(skip(self), fields(url = %self.target))]
     async fn execute(&self) -> Result<HttpResponse, String> {
         // ensure url is valid
+        debug!("Validating URL");
         match validators::validate_url(&self.target) {
             Ok(_) => (),
-            Err(e) => return Err(e),
+            Err(e) => {
+                error!("URL validation failed: {}", e);
+                return Err(e);
+            }
         }
 
         // Perform HTTP GET request.
+        info!("Performing HTTP GET request");
         let response = self
             .client
             .as_ref()
@@ -55,6 +77,7 @@ impl Request for HttpRequest {
 
         // Get status code.
         let status_code = response.status().as_u16();
+        debug!("Response status code: {}", status_code);
 
         // Get the title of the HTML page.
         let title = response
@@ -63,6 +86,7 @@ impl Request for HttpRequest {
             .and_then(|value| value.to_str().ok())
             .unwrap_or("No title")
             .to_string();
+        debug!("Response title: {}", title);
 
         // Collect headers as "Key: Value" strings.
         let headers: Vec<String> = response
@@ -72,12 +96,14 @@ impl Request for HttpRequest {
             .collect();
 
         // Read the response body as text.
+        debug!("Reading response body");
         let body = response
             .text()
             .await
             .map_err(|e| format!("Error reading body: {}", e))?;
 
         // Parse the HTML body using the scraper crate.
+        debug!("Parsing HTML body");
         let document = scraper::Html::parse_document(&body);
 
         // Extract all links from anchor tags (<a href="...">).
@@ -88,6 +114,7 @@ impl Request for HttpRequest {
             .select(&link_selector)
             .filter_map(|element| element.value().attr("href").map(|s| s.to_string()))
             .collect();
+        debug!("Found {} links", links.len());
 
         // If links start with a slash, prepend the domain.
         let url = url::Url::parse(&self.target).map_err(|_| "Error parsing target URL")?;
@@ -99,7 +126,13 @@ impl Request for HttpRequest {
         }
 
         // Now, only keep links that are valid URLs.
-        links.retain(|link| validators::validate_url(link).is_ok());
+        links.retain(|link| {
+            let is_ok = validators::validate_url(link).is_ok();
+            if !is_ok {
+                warn!("Invalid link found and removed: {}", link);
+            }
+            is_ok
+        });
 
         // Extract meta tags with a name attribute.
         let meta_selector = scraper::Selector::parse("meta[name]")
@@ -126,6 +159,7 @@ impl Request for HttpRequest {
                         .map(|charset| format!("charset: {}", charset))
                 }),
         );
+        debug!("Found {} meta tags", meta.len());
 
         Ok(HttpResponse {
             title,

@@ -4,9 +4,13 @@ mod requests;
 mod validators;
 
 use agents::crawler_agent::CrawlerAgent;
+use tracing::info;
 
 #[tokio::main]
 async fn main() {
+    // Initialize tracing subscriber
+    tracing_subscriber::fmt::init();
+
     // Initialize dotenv
     dotenv::dotenv().ok();
 
@@ -14,8 +18,19 @@ async fn main() {
     let crawler_type = std::env::var("CRAWLER_TYPE").unwrap_or_else(|_| "default".to_string());
 
     // Fetch crawler object type from environment variable or assign default prompt
-    // FIXME: Implement this when we have a proper prompt system
     // let crawler_objective = std::env::var("CRAWLER_OBJECT_TYPE").unwrap_or_else(|_| "You are a web crawler. You will scrape this website and extract all the relevant inforatino from it. Keep the information in a structured format.".to_string());
+
+    // Fetch max depth from environment variable or default to 2
+    let max_depth = std::env::var("MAX_DEPTH")
+        .unwrap_or_else(|_| "2".to_string())
+        .parse::<u32>()
+        .expect("MAX_DEPTH must be a valid u32");
+
+    // Fetch respect_robots_txt from environment variable or default to true
+    let respect_robots_txt = std::env::var("RESPECT_ROBOTS_TXT")
+        .unwrap_or_else(|_| "true".to_string())
+        .parse::<bool>()
+        .expect("RESPECT_ROBOTS_TXT must be a valid boolean");
 
     // Define list of seeds where to start scraping
     let seeds = [
@@ -44,7 +59,7 @@ async fn main() {
         .unwrap_or_else(|_| num_cpus::get().to_string())
         .parse::<usize>()
         .unwrap();
-    log::info!("Number of agents: {}", n_agents);
+    info!("Number of agents: {}", n_agents);
 
     // Calculate the approximate number of seeds per agent.
     let chunk_size = seeds.len().div_ceil(n_agents);
@@ -64,9 +79,9 @@ async fn main() {
 
         // start the agent in a separate task
         let handle = tokio::task::spawn(async move {
-            log::info!("Starting agent with seeds: {:?}", seeds_chunk);
+            info!("Starting agent with seeds: {:?}", seeds_chunk);
             // Each agent gets its own seeds.
-            let mut agent = CrawlerAgent::new_with_seeds(current_id, crawler_type, seeds_chunk)
+            let mut agent = CrawlerAgent::new_with_seeds(current_id, crawler_type, seeds_chunk, max_depth, respect_robots_txt)
                 .await
                 .expect("Failed to create CrawlerAgent");
             agent.start().await;
