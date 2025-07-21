@@ -45,7 +45,7 @@ impl CrawlerAgent {
         }
     }
 
-    // Create crawler agent with a set of initial seeds
+    // Create crawler agent with a set of hard-coded URL seeds
     #[instrument(skip(seed))]
     pub async fn new_with_seeds(
         id: u16,
@@ -55,15 +55,15 @@ impl CrawlerAgent {
         respect_robots_txt: bool,
     ) -> Result<Self, String> {
         // generate unique identigier for the agent
-        let agent_name = format!("crawler-{}-{}", type_name, id);
+        let agent_name = format!("crawler-{type_name}-{id}");
         info!("Creating new crawler agent with name: {}", agent_name);
 
         // create rabbitmq and redis clients
         let rabbit = RabbitClient::build()
             .await
-            .map_err(|e| format!("Failed to create RabbitMQ client: {}", e))?;
+            .map_err(|e| format!("Failed to create RabbitMQ client: {e}"))?;
         let redis =
-            RedisClient::build().map_err(|e| format!("Failed to create Redis client: {}", e))?;
+            RedisClient::build().map_err(|e| format!("Failed to create Redis client: {e}"))?;
 
         // intialize the agent with both clients
         let mut agent = CrawlerAgent::new(agent_name, rabbit, redis, respect_robots_txt);
@@ -101,7 +101,10 @@ impl CrawlerAgent {
         }
 
         // Execute the request asynchronously.
-        let res = req.execute().await.map_err(|e| format!("Error: {}", e))?;
+        let res = req
+            .execute()
+            .await
+            .map_err(|e| format!("Request error: {e}",))?;
         info!("Request executed successfully");
 
         // Enroll discovered links into the queue.

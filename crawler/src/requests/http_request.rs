@@ -45,7 +45,10 @@ impl Request for HttpRequest {
 
     #[instrument]
     fn new(target: String, depth: u32) -> Self {
-        info!("Creating new HTTP request for target: {} at depth {}", target, depth);
+        info!(
+            "Creating new HTTP request for target: {} at depth {}",
+            target, depth
+        );
         HttpRequest {
             target,
             client: Some(get_default_http_client()),
@@ -73,7 +76,7 @@ impl Request for HttpRequest {
             .unwrap()
             .get(&self.target)
             .await
-            .map_err(|e| format!("HTTP request error: {}", e))?;
+            .map_err(|e| format!("HTTP request error: {e}"))?;
 
         // Get status code.
         let status_code = response.status().as_u16();
@@ -100,7 +103,7 @@ impl Request for HttpRequest {
         let body = response
             .text()
             .await
-            .map_err(|e| format!("Error reading body: {}", e))?;
+            .map_err(|e| format!("Error reading body: {e}"))?;
 
         // Parse the HTML body using the scraper crate.
         debug!("Parsing HTML body");
@@ -108,7 +111,7 @@ impl Request for HttpRequest {
 
         // Extract all links from anchor tags (<a href="...">).
         let link_selector = scraper::Selector::parse("a[href]")
-            .map_err(|e| format!("Selector parse error: {}", e))?;
+            .map_err(|e| format!("Selector parse error: {e}"))?;
 
         let mut links: Vec<String> = document
             .select(&link_selector)
@@ -136,19 +139,19 @@ impl Request for HttpRequest {
 
         // Extract meta tags with a name attribute.
         let meta_selector = scraper::Selector::parse("meta[name]")
-            .map_err(|e| format!("Selector parse error: {}", e))?;
+            .map_err(|e| format!("Selector parse error: {e}"))?;
         let mut meta: Vec<String> = document
             .select(&meta_selector)
             .filter_map(|element| {
                 let name = element.value().attr("name")?;
                 let content = element.value().attr("content")?;
-                Some(format!("{}: {}", name, content))
+                Some(format!("{name}: {content}"))
             })
             .collect();
 
         // Also extract meta tags with a charset attribute.
         let meta_charset_selector = scraper::Selector::parse("meta[charset]")
-            .map_err(|e| format!("Selector parse error: {}", e))?;
+            .map_err(|e| format!("Selector parse error: {e}"))?;
         meta.extend(
             document
                 .select(&meta_charset_selector)
@@ -156,7 +159,7 @@ impl Request for HttpRequest {
                     element
                         .value()
                         .attr("charset")
-                        .map(|charset| format!("charset: {}", charset))
+                        .map(|charset| format!("charset: {charset}"))
                 }),
         );
         debug!("Found {} meta tags", meta.len());

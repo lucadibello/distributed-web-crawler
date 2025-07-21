@@ -24,11 +24,11 @@ impl RedisClient {
 
         // Create a Redis client and establish a connection
         let client = redis::Client::open(redis_url.clone())
-            .map_err(|e| format!("Failed to create Redis client: {}", e))?;
+            .map_err(|e| format!("Failed to create Redis client: {e}"))?;
 
         let conn = client
             .get_connection()
-            .map_err(|e| format!("Failed to connect to Redis at {}: {}", redis_url, e))?;
+            .map_err(|e| format!("Failed to connect to Redis at {redis_url}: {e}"))?;
 
         info!("Redis connection successful");
         Ok(RedisClient { conn })

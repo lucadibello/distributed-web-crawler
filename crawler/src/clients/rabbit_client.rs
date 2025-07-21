@@ -44,7 +44,7 @@ impl RabbitClient {
 
         info!("Starting RabbitMQ client setup");
 
-        let addr = format!("amqp://{}:{}@{}:{}", user, password, host, port);
+        let addr = format!("amqp://{user}:{password}@{host}:{port}");
         info!("Connecting to RabbitMQ");
 
         let conn = Connection::connect(&addr, ConnectionProperties::default()).await?;
@@ -127,7 +127,7 @@ impl RabbitClient {
             )
             .await
             .map_err(|e| {
-                eprintln!("Failed to start consumer: {}", e);
+                eprintln!("Failed to start consumer: {e}");
                 Box::new(e) as Box<dyn Error>
             })?;
 
@@ -144,7 +144,7 @@ impl RabbitClient {
                     debug!("Message acknowledged");
                 }
                 Err(e) => {
-                    eprintln!("Error processing message: {}", e);
+                    eprintln!("Error processing message: {e}");
                     delivery
                         .nack(lapin::options::BasicNackOptions::default())
                         .await?;
