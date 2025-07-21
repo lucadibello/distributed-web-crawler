@@ -1,4 +1,5 @@
 services:
+  # fast caching server to record visited websites
   redis:
     image: redis:alpine
     container_name: redis
@@ -8,58 +9,45 @@ services:
       - redis_data:/data
     restart: always
 
-  rabbit:
-    image: rabbitmq:4-management
-    container_name: rabbitmq
+  # rabbit:
+  #   image: rabbitmq:4-management
+  #   container_name: rabbitmq
+  #   ports:
+  #     - "5672:5672" # AMQP protocol for messaging
+  #     - "15672:15672" # Management UI
+  #   volumes:
+  #     - rabbitmq_data:/var/lib/rabbitmq/
+  #   environment:
+  #     - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+  #     - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
+
+  # Apache Storm to process large amounts of data!
+  zookeeper:
+    image: zookeeper
+    container_name: zookeeper
+    restart: always
+  nimbus:
+    image: storm
+    container_name: nimbus
+    command: storm nimbus
+    depends_on:
+      - zookeeper
+    links:
+      - zookeeper
+    restart: always
     ports:
-      - "5672:5672" # AMQP protocol for messaging
-      - "15672:15672" # Management UI
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq/
-    environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
-
-  # Zookeeper (Kafka dependency)
-  # zookeeper:
-  #   image: confluentinc/cp-zookeeper:latest
-  #   container_name: zookeeper
-  #   environment:
-  #     ZOOKEEPER_CLIENT_PORT: 2181
-  #   ports:
-  #     - "2181:2181"
-  #   restart: always
-
-  # Kafka - Distributed pub-sub system for processing scraped data
-  # kafka:
-  #   image: confluentinc/cp-kafka:latest
-  #   container_name: kafka
-  #   depends_on:
-  #     - zookeeper
-  #   ports:
-  #     - "9092:9092"
-  #   environment:
-  #     KAFKA_BROKER_ID: 1
-  #     KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-  #   restart: always
-  #
-
-  # Kafka UI (Optional: To monitor topics and messages)
-  # kafka-ui:
-  #   image: provectuslabs/kafka-ui:latest
-  #   container_name: kafka-ui
-  #   depends_on:
-  #     - kafka
-  #   ports:
-  #     - "8080:8080"
-  #   environment:
-  #     KAFKA_CLUSTERS_0_NAME: kafka-cluster
-  #     KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
-  #     KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
-  #   restart: always
+      - "6627:6627"
+  supervisor:
+    image: storm
+    container_name: supervisor
+    command: storm supervisor
+    depends_on:
+      - nimbus
+      - zookeeper
+    links:
+      - nimbus
+      - zookeeper
+    restart: always
 
 volumes:
   redis_data:
