@@ -1,2 +1,2 @@
-pub mod http_request;
+pub mod http;
 pub mod request;

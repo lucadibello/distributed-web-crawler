@@ -2,7 +2,7 @@ use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::{Client, Error, Proxy};
 use std::time::Duration;
 use tokio::time;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, instrument, warn};
 
 pub struct HttpClientConfig {
     pub user_agent: Option<String>,
@@ -26,19 +26,19 @@ impl HttpClient {
 
         // Set timeout if provided. (This sets a default timeout for all requests.)
         if let Some(timeout) = config.timeout {
-            info!("Setting HTTP client timeout to {:?}", timeout);
+            debug!("Setting HTTP client timeout to {:?}", timeout);
             builder = builder.timeout(timeout);
         }
 
         // Set proxy if provided.
         if let Some(proxy_url) = &config.proxy {
-            info!("Setting HTTP client proxy to {}", proxy_url);
+            debug!("Setting HTTP client proxy to {}", proxy_url);
             builder = builder.proxy(Proxy::all(proxy_url)?);
         }
 
         // Set default headers (e.g., custom user agent) if provided.
         if let Some(user_agent) = &config.user_agent {
-            info!("Setting HTTP client user agent to {}", user_agent);
+            debug!("Setting HTTP client user agent to {}", user_agent);
             let mut headers = HeaderMap::new();
             headers.insert(
                 USER_AGENT,

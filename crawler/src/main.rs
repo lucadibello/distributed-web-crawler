@@ -1,10 +1,17 @@
-mod agents;
 mod clients;
+mod crawler;
+mod repositories;
 mod requests;
 mod validators;
 
-use agents::crawler_agent::CrawlerAgent;
+use std::sync::Arc;
+
+use crawler::Crawler;
+use drivers::redis::RedisDriver;
+use tokio::sync::Mutex;
 use tracing::info;
+
+use crate::repositories::urls::UrlRepository;
 
 #[tokio::main]
 async fn main() {
@@ -14,11 +21,11 @@ async fn main() {
     // Initialize dotenv
     dotenv::dotenv().ok();
 
+    // connect to Redis
+    let redis = RedisDriver::build().expect("Failed to build Redis client");
+
     // Fetch crawler type from environment variable or default to "default"
     let crawler_type = std::env::var("CRAWLER_TYPE").unwrap_or_else(|_| "default".to_string());
-
-    // Fetch crawler object type from environment variable or assign default prompt
-    // let crawler_objective = std::env::var("CRAWLER_OBJECT_TYPE").unwrap_or_else(|_| "You are a web crawler. You will scrape this website and extract all the relevant inforatino from it. Keep the information in a structured format.".to_string());
 
     // Fetch max depth from environment variable or default to 2
     let max_depth = std::env::var("MAX_DEPTH")
@@ -61,14 +68,13 @@ async fn main() {
         .unwrap();
     info!("Number of agents: {}", n_agents);
 
-    // Calculate the approximate number of seeds per agent.
     let chunk_size = seeds.len().div_ceil(n_agents);
-
-    // Create a vector to hold all the agent tasks.
     let mut handles = Vec::new();
-
-    // For each chunk, spawn a crawler agent.
     let mut id_counter: u16 = 1;
+
+    // borrow mutable reference to redis driver (needed for the repository)
+    let repository = Arc::new(UrlRepository::new(Arc::new(Mutex::new(redis))));
+
     for chunk in seeds.chunks(chunk_size) {
         // Convert the chunk of seeds (which are String) into Vec<&str> for the agent.
         let seeds_chunk: Vec<&str> = chunk.to_vec();
@@ -76,14 +82,21 @@ async fn main() {
         // Create immutable borrow of the id_counter for the current agent.
         let current_id = id_counter;
         let crawler_type = crawler_type.clone();
+        let log_name = format!("crawler-{crawler_type}-{current_id}");
+        let agent_url_repo = Arc::clone(&repository);
 
         // start the agent in a separate task
         let handle = tokio::task::spawn(async move {
-            info!("Starting agent with seeds: {:?}", seeds_chunk);
-            // Each agent gets its own seeds.
-            let mut agent = CrawlerAgent::new_with_seeds(current_id, crawler_type, seeds_chunk, max_depth, respect_robots_txt)
-                .await
-                .expect("Failed to create CrawlerAgent");
+            // create new crawler instance
+            let mut agent = Crawler::new(
+                log_name,
+                agent_url_repo,
+                respect_robots_txt,
+                max_depth,
+                seeds_chunk,
+            );
+
+            // start agent asynchronously
             agent.start().await;
         });
         handles.push(handle);

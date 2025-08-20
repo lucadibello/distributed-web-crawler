@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::{
-    clients::http_client::{get_default_http_client, HttpClient},
+    clients::http::{get_default_http_client, HttpClient},
     requests::request::Request,
     validators,
 };
