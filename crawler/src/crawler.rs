@@ -30,7 +30,7 @@ impl Crawler {
         rabbit: Arc<RabbitDriver>,
         respect_robots_txt: bool,
         max_depth: u32,
-        seed: Vec<&str>,
+        seed: Vec<Url>,
     ) -> Self {
         let mut agent = Crawler {
             name,
@@ -45,7 +45,7 @@ impl Crawler {
         // push seed URLs into the queue if present
         if !seed.is_empty() {
             for url in seed {
-                agent.push(HttpRequest::new(String::from(url), 0));
+                agent.push(HttpRequest::new(url.as_str(), 0));
             }
         }
 
@@ -107,7 +107,7 @@ impl Crawler {
 
                 // now, we need to process the links found during the crawl
                 for link in extra.links.iter() {
-                    self.push(HttpRequest::new(link.clone(), req.depth + 1));
+                    self.push(HttpRequest::new(link.as_ref(), req.depth + 1));
                 }
             }
         } else {

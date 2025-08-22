@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crawler::Crawler;
 use drivers::{rabbit::RabbitDriver, redis::RedisDriver};
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() {
@@ -44,27 +44,18 @@ async fn main() {
         .parse::<bool>()
         .expect("RESPECT_ROBOTS_TXT must be a valid boolean");
 
-    // Define list of seeds where to start scraping
-    let seeds = [
-        // General-purpose seeds
-        "https://en.wikipedia.org/wiki/Main_Page",
-        "https://www.bbc.com",
-        "https://news.ycombinator.com/",
-        // Open data and research
-        "https://arxiv.org/",
-        "https://scholar.google.com/",
-        "https://data.gov/",
-        // Technology and development
-        "https://github.com/trending",
-        "https://stackoverflow.com/",
-        "https://www.producthunt.com/",
-        // Social and community-driven content
-        "https://www.reddit.com/r/technology/",
-        "https://medium.com/",
-        // E-commerce and marketplaces
-        "https://www.amazon.com/",
-        "https://www.ebay.com/",
-    ];
+    // Toy seeds to showcase usage
+    let seeds = match repositories::load_seeds_from_dir("./crawler/seed").await {
+        Ok(u) => u,
+        Err(e) => {
+            error!(
+                "Failed to load seeds from directory: {}. Fallback to default (generic) seeds.",
+                e
+            );
+
+            repositories::load_default_seeds()
+        }
+    };
 
     // Set the number of agents (threads) you want to run concurrently.
     let n_agents = std::env::var("N_AGENTS")
@@ -88,7 +79,7 @@ async fn main() {
 
     for chunk in seeds.chunks(chunk_size) {
         // Convert the chunk of seeds (which are String) into Vec<&str> for the agent.
-        let seeds_chunk: Vec<&str> = chunk.to_vec();
+        let seeds_chunk = chunk.to_vec();
 
         // Create immutable borrow of the id_counter for the current agent.
         let current_id = id_counter;

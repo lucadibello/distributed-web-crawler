@@ -33,13 +33,13 @@ impl Request for HttpRequest {
     type Output = HttpResponse;
 
     #[instrument]
-    fn new(target: String, depth: u32) -> Self {
+    fn new(target: &str, depth: u32) -> Self {
         info!(
             "Creating new HTTP request for target: {} at depth {}",
             target, depth
         );
         HttpRequest {
-            target,
+            target: String::from(target),
             client: Some(get_default_http_client()),
             depth,
         }

@@ -1,3 +1,4 @@
+pub mod seedrepository;
 pub mod urlrepository;
 
 use async_trait::async_trait;
@@ -18,4 +19,5 @@ where
 }
 
 // re-export all repositories here
+pub use seedrepository::{load_default_seeds, load_seeds_from_dir};
 pub use urlrepository::UrlRepository;
