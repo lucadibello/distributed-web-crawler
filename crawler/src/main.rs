@@ -45,14 +45,13 @@ async fn main() {
         .expect("RESPECT_ROBOTS_TXT must be a valid boolean");
 
     // Toy seeds to showcase usage
-    let seeds = match repositories::load_seeds_from_dir("./crawler/seed").await {
+    let seeds = match repositories::load_seeds_from_dir("./seeds").await {
         Ok(u) => u,
         Err(e) => {
             error!(
                 "Failed to load seeds from directory: {}. Fallback to default (generic) seeds.",
                 e
             );
-
             repositories::load_default_seeds()
         }
     };
