@@ -20,3 +20,6 @@ Session.vim
 .settings/
 .vs/
 .dir-locals.el
+
+# Secrets
+.env
