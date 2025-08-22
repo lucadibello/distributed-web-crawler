@@ -97,9 +97,9 @@ cargo run --release
 
 Seeds: put one URL per line in any file under `crawler/seeds/` (e.g., `crawler/seeds/general.txt`). Invalid lines are ignored. If the directory is missing/unreadable, a default set of seeds is used.
 
-5. (Optional) Run a consumer
+5. (Optional) Run the toy consumer
 
-In a separate terminal, print messages as they arrive:
+In a separate terminal, run the following to see consumed `PageData` messages:
 
 ```bash
 cd consumers
