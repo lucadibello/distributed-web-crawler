@@ -1,116 +1,160 @@
 use futures_lite::StreamExt;
-use lapin::options::{BasicConsumeOptions, QueueDeclareOptions};
+use lapin::options::{
+    BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicPublishOptions,
+    QueueDeclareOptions,
+};
 use lapin::types::FieldTable;
-use lapin::{Channel, Connection, ConnectionProperties, Queue};
+use lapin::{BasicProperties, Channel, Connection, ConnectionProperties};
+use serde::Serialize;
 use std::env;
-use std::error::Error;
-use tracing::{Level, debug, info, instrument, span};
+use tracing::{Level, debug, error, info, instrument, span, trace, warn};
 
 #[allow(dead_code)]
-pub struct RabbitDriver {
+pub struct RabbitClient {
     conn: Connection,
     channel: Channel,
     queue_name: String,
     consumer_tag: String,
 }
 
-impl RabbitDriver {
-    /// Creates a new RabbitMQ client instance.
-    fn new(conn: Connection, channel: Channel, queue_name: String, consumer_tag: String) -> Self {
-        RabbitDriver {
-            conn,
-            channel,
-            queue_name,
-            consumer_tag,
-        }
-    }
+impl RabbitClient {
+    /// Build from environment. Defaults: guest/guest@127.0.0.1:5672, queue=default_queue, crawler=generic
+    #[instrument(
+        name = "RabbitMQ Setup",
+        level = "info",
+        skip_all,
+        fields(rabbit.host, rabbit.port, rabbit.queue, rabbit.addr, rabbit.consumer_tag)
+    )]
+    pub async fn new() -> Result<Self, String> {
+        // env with sane defaults
+        let user = env::var("RABBIT_USER").unwrap_or_else(|_| "guest".to_string());
+        let password = env::var("RABBIT_PASSWORD").unwrap_or_else(|_| "guest".to_string());
+        let host = env::var("RABBIT_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+        let port = env::var("RABBIT_PORT").unwrap_or_else(|_| "5672".to_string());
+        let queue_name = env::var("RABBIT_QUEUE").unwrap_or_else(|_| "default_queue".to_string());
+        let crawler_type = env::var("CRAWLER_TYPE").unwrap_or_else(|_| "generic".to_string());
 
-    /// Establishes a connection to RabbitMQ, creates a channel, and declares a queue.
-    #[instrument(name = "RabbitMQ Setup", skip_all)]
-    pub async fn build() -> Result<Self, Box<dyn Error>> {
-        // Load environment variables
-        let user = env::var("RABBIT_USER")?;
-        let password = env::var("RABBIT_PASSWORD")?;
-        let host = env::var("RABBIT_HOST")?;
-        let port = env::var("RABBIT_PORT")?;
-        let queue_name = env::var("RABBIT_QUEUE")?;
-        let crawler_type = env::var("CRAWLER_TYPE")?;
+        // never log credentials
+        let addr = format!("amqp://{}:{}@{}:{}", user, password, host, port);
+        let conn_addr = format!("amqp://{}:{}", host, port); // safe to log
+        let consumer_tag = format!("crawler-{}", crawler_type.trim());
 
-        // Get the current span and record fields to it individually.
+        // enrich span
         let span = tracing::Span::current();
         span.record("rabbit.host", &host);
         span.record("rabbit.port", &port);
         span.record("rabbit.queue", &queue_name);
+        span.record("rabbit.addr", &conn_addr);
+        span.record("rabbit.consumer_tag", &consumer_tag);
 
-        let addr = format!("amqp://{user}:{password}@{host}:{port}");
-        debug!("Connecting to RabbitMQ");
-        let conn = Connection::connect(&addr, ConnectionProperties::default()).await?;
-        debug!("Connection successful");
-        let channel = conn.create_channel().await?;
-        debug!("Channel created successfully");
+        info!("Connecting to RabbitMQ at {}", conn_addr);
+        let conn = Connection::connect(&addr, ConnectionProperties::default())
+            .await
+            .map_err(|e| {
+                error!("Connection failed: {}", e);
+                format!("Failed to connect to RabbitMQ at {conn_addr}: {e}")
+            })?;
+        info!("Connection established");
 
-        let consumer_tag = format!("crawler-{}", crawler_type.trim());
-        let queue_span = span!(Level::DEBUG, "Queue Declaration", consumer_tag = %consumer_tag);
+        debug!("Creating channel");
+        let channel = conn.create_channel().await.map_err(|e| {
+            error!("Channel creation failed: {}", e);
+            format!("Failed to create channel: {e}")
+        })?;
+
+        let queue_span = span!(Level::DEBUG, "Queue Declaration", %consumer_tag, %queue_name);
         let _enter = queue_span.enter();
 
+        debug!("Declaring durable queue");
         let queue_options = QueueDeclareOptions {
             durable: true,
             exclusive: false,
             auto_delete: false,
             ..Default::default()
         };
-        debug!("Declaring queue: {}", queue_name);
-        let _queue: Queue = channel
-            .queue_declare(&queue_name, queue_options, Default::default())
-            .await?;
-        debug!("Queue declared successfully");
 
-        // return driver instance with everything initialized
-        Ok(RabbitDriver::new(conn, channel, queue_name, consumer_tag))
+        channel
+            .queue_declare(&queue_name, queue_options, FieldTable::default())
+            .await
+            .map_err(|e| {
+                error!("Queue declare failed for '{}': {}", queue_name, e);
+                format!("Queue declare failed for '{}': {e}", queue_name)
+            })?;
+        info!("Queue declared: {}", queue_name);
+
+        Ok(RabbitClient {
+            conn,
+            channel,
+            queue_name,
+            consumer_tag,
+        })
     }
 
-    /// Publishes a message to the declared queue.
     #[instrument(
         name = "Enqueue Message",
+        level = "info",
         skip(self, payload),
-        fields(
-            rabbit.queue = %self.queue_name,
-            msg.size = payload.len()
-        )
+        fields(rabbit.queue = %self.queue_name, msg.size)
     )]
-    pub async fn enqueue(&self, payload: String) -> Result<(), Box<dyn Error>> {
-        debug!("Publishing message");
+
+    pub async fn enqueue<T: Serialize + Sized>(&self, payload: T) -> Result<(), String> {
+        // convert to string
+        let data = serde_json::to_string(&payload).map_err(|e| {
+            error!("Serialization failed: {}", e);
+            format!("Failed to serialize payload: {e}")
+        })?;
+
         self.channel
             .basic_publish(
-                "",
+                "", // empty exchange for default
                 &self.queue_name,
-                lapin::options::BasicPublishOptions::default(),
-                payload.as_bytes(),
-                lapin::BasicProperties::default(),
+                BasicPublishOptions::default(),
+                data.as_bytes(),
+                BasicProperties::default(),
             )
-            .await?
-            .await?;
-        debug!("Message published successfully");
+            .await
+            .map_err(|e| {
+                error!("Publish send failed: {}", e);
+                format!("Publish send failed: {e}")
+            })?
+            .await
+            .map_err(|e| {
+                error!("Publish confirm failed: {}", e);
+                format!("Publish confirm failed: {e}")
+            })?;
+
+        debug!("Message published to {}", self.queue_name);
         Ok(())
     }
 
-    /// Gracefully closes the channel and the connection.
-    #[instrument(name = "Close Connection", skip(self))]
-    pub async fn close(self) -> Result<(), Box<dyn Error>> {
-        debug!("Closing channel and connection");
-        self.channel.close(200, "Goodbye").await?;
-        self.conn.close(200, "Bye").await?;
-        info!("Connection closed successfully.");
+    #[instrument(name = "Close Connection", level = "info", skip(self))]
+    pub async fn close(self) -> Result<(), String> {
+        info!("Closing channel and connection");
+        self.channel.close(200, "Goodbye").await.map_err(|e| {
+            error!("Channel close failed: {}", e);
+            format!("Channel close failed: {e}")
+        })?;
+        self.conn.close(200, "Bye").await.map_err(|e| {
+            error!("Connection close failed: {}", e);
+            format!("Connection close failed: {e}")
+        })?;
+        info!("Closed");
         Ok(())
     }
 
-    /// Consumes messages from the declared queue.
-    #[instrument(name = "Consume Messages", skip(self, on_message))]
-    pub async fn consume<F>(&self, on_message: F) -> Result<(), Box<dyn Error>>
+    #[instrument(
+        name = "Consume Messages",
+        level = "info",
+        skip(self, on_message),
+        fields(rabbit.queue = %self.queue_name, rabbit.consumer_tag = %self.consumer_tag)
+    )]
+    pub async fn consume<F>(&self, on_message: F) -> Result<(), String>
     where
-        F: Fn(Vec<u8>) -> Result<(), Box<dyn Error>> + Send + Sync + 'static,
+        // thread-safe function that receives the message payload, and returns Ok(()) on success or
+        // Err(String) on failure
+        F: Fn(Vec<u8>) -> Result<(), String> + Send + Sync + 'static,
     {
-        debug!("Starting message consumption");
+        info!("Starting consumer");
         let mut consumer = self
             .channel
             .basic_consume(
@@ -121,32 +165,58 @@ impl RabbitDriver {
             )
             .await
             .map_err(|e| {
-                eprintln!("Failed to start consumer: {e}");
-                Box::new(e) as Box<dyn Error>
+                error!("Failed to start consumer: {}", e);
+                format!("Failed to start consumer: {e}")
             })?;
 
         while let Some(delivery) = consumer.next().await {
-            let delivery = delivery.expect("error in consumer");
-            let message_content = delivery.data.clone();
-            debug!("Received message: {:?}", delivery.data);
+            let delivery = match delivery {
+                Ok(d) => d,
+                Err(e) => {
+                    error!("Consumer yielded error: {}", e);
+                    return Err(format!("Consumer yielded error: {e}"));
+                }
+            };
 
-            match on_message(message_content) {
+            let tag = delivery.delivery_tag;
+            let corr = delivery
+                .properties
+                .correlation_id()
+                .as_ref()
+                .map(|c| String::from_utf8_lossy(c.as_str().as_bytes()).to_string())
+                .unwrap_or_default();
+
+            let msg_span = span!(Level::DEBUG, "Handle Delivery", delivery.tag = %tag, correlation_id = %corr, size = delivery.data.len());
+            let _enter = msg_span.enter();
+
+            debug!("Received message");
+            trace!("Payload size: {} bytes", delivery.data.len());
+
+            // check result of handler
+            match on_message(delivery.data.clone()) {
                 Ok(_) => {
                     delivery
-                        .ack(lapin::options::BasicAckOptions::default())
-                        .await?;
-                    debug!("Message acknowledged");
+                        .ack(BasicAckOptions::default())
+                        .await
+                        .map_err(|e| {
+                            error!("Ack failed for tag {}: {}", tag, e);
+                            format!("Ack failed: {e}")
+                        })?;
+                    debug!("Acked tag {}", tag);
                 }
-                Err(e) => {
-                    eprintln!("Error processing message: {e}");
-                    delivery
-                        .nack(lapin::options::BasicNackOptions::default())
-                        .await?;
-                    debug!("Message nacked");
+                Err(handler_err) => {
+                    warn!("Handler error for tag {}: {}", tag, handler_err);
+                    let opts = BasicNackOptions::default();
+                    delivery.nack(opts).await.map_err(|e2| {
+                        error!("Nack failed after handler error '{}': {}", handler_err, e2);
+                        format!("Nack failed after handler error '{handler_err}': {e2}")
+                    })?;
+                    debug!("Nacked tag {} (requeue=false)", tag);
                 }
             }
         }
-        info!("Message consumption stopped");
+
+        info!("Consumer stopped");
         Ok(())
     }
 }
