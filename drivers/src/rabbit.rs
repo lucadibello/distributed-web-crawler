@@ -10,14 +10,14 @@ use std::env;
 use tracing::{Level, debug, error, info, instrument, span, trace, warn};
 
 #[allow(dead_code)]
-pub struct RabbitClient {
+pub struct RabbitDriver {
     conn: Connection,
     channel: Channel,
     queue_name: String,
     consumer_tag: String,
 }
 
-impl RabbitClient {
+impl RabbitDriver {
     /// Build from environment. Defaults: guest/guest@127.0.0.1:5672, queue=default_queue, crawler=generic
     #[instrument(
         name = "RabbitMQ Setup",
@@ -26,7 +26,7 @@ impl RabbitClient {
         fields(rabbit.host, rabbit.port, rabbit.queue, rabbit.addr, rabbit.consumer_tag)
     )]
     pub async fn new() -> Result<Self, String> {
-        // env with sane defaults
+        // env with defaults
         let user = env::var("RABBIT_USER").unwrap_or_else(|_| "guest".to_string());
         let password = env::var("RABBIT_PASSWORD").unwrap_or_else(|_| "guest".to_string());
         let host = env::var("RABBIT_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -82,7 +82,7 @@ impl RabbitClient {
             })?;
         info!("Queue declared: {}", queue_name);
 
-        Ok(RabbitClient {
+        Ok(RabbitDriver {
             conn,
             channel,
             queue_name,

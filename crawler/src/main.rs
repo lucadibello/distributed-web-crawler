@@ -22,10 +22,10 @@ async fn main() {
     dotenv::dotenv().ok();
 
     // connect to Redis
-    let redis = RedisDriver::build().expect("Failed to build Redis client");
+    let redis = RedisDriver::new().expect("Failed to build Redis client");
 
     // connect to RabbitMQ
-    let rabbit = RabbitDriver::build()
+    let rabbit = RabbitDriver::new()
         .await
         .expect("Failed to build RabbitMQ client");
 

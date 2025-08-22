@@ -11,7 +11,7 @@ pub struct RedisDriver {
 
 impl RedisDriver {
     #[instrument]
-    pub fn build() -> Result<Self, String> {
+    pub fn new() -> Result<Self, String> {
         // Build the Redis URL from environment variables
         let redis_url = format!(
             "redis://{}:{}/{}",
