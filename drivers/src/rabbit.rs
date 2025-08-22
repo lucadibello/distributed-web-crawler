@@ -42,36 +42,30 @@ impl RabbitDriver {
         span.record("rabbit.port", &port);
         span.record("rabbit.queue", &queue_name);
 
-        info!("Starting RabbitMQ client setup");
-
         let addr = format!("amqp://{user}:{password}@{host}:{port}");
-        info!("Connecting to RabbitMQ");
-
+        debug!("Connecting to RabbitMQ");
         let conn = Connection::connect(&addr, ConnectionProperties::default()).await?;
-        info!("Connection successful");
-
-        debug!("Creating channel");
+        debug!("Connection successful");
         let channel = conn.create_channel().await?;
+        debug!("Channel created successfully");
 
         let consumer_tag = format!("crawler-{}", crawler_type.trim());
-
         let queue_span = span!(Level::DEBUG, "Queue Declaration", consumer_tag = %consumer_tag);
         let _enter = queue_span.enter();
 
-        debug!("Declaring queue");
         let queue_options = QueueDeclareOptions {
             durable: true,
             exclusive: false,
             auto_delete: false,
             ..Default::default()
         };
-
+        debug!("Declaring queue: {}", queue_name);
         let _queue: Queue = channel
             .queue_declare(&queue_name, queue_options, Default::default())
             .await?;
+        debug!("Queue declared successfully");
 
-        info!("Queue declared successfully");
-
+        // return driver instance with everything initialized
         Ok(RabbitDriver::new(conn, channel, queue_name, consumer_tag))
     }
 
@@ -103,7 +97,7 @@ impl RabbitDriver {
     /// Gracefully closes the channel and the connection.
     #[instrument(name = "Close Connection", skip(self))]
     pub async fn close(self) -> Result<(), Box<dyn Error>> {
-        info!("Closing channel and connection");
+        debug!("Closing channel and connection");
         self.channel.close(200, "Goodbye").await?;
         self.conn.close(200, "Bye").await?;
         info!("Connection closed successfully.");
@@ -116,7 +110,7 @@ impl RabbitDriver {
     where
         F: Fn(Vec<u8>) -> Result<(), Box<dyn Error>> + Send + Sync + 'static,
     {
-        info!("Starting message consumption");
+        debug!("Starting message consumption");
         let mut consumer = self
             .channel
             .basic_consume(
