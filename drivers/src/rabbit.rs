@@ -7,17 +7,17 @@ use std::error::Error;
 use tracing::{Level, debug, info, instrument, span};
 
 #[allow(dead_code)]
-pub struct RabbitClient {
+pub struct RabbitDriver {
     conn: Connection,
     channel: Channel,
     queue_name: String,
     consumer_tag: String,
 }
 
-impl RabbitClient {
+impl RabbitDriver {
     /// Creates a new RabbitMQ client instance.
     fn new(conn: Connection, channel: Channel, queue_name: String, consumer_tag: String) -> Self {
-        RabbitClient {
+        RabbitDriver {
             conn,
             channel,
             queue_name,
@@ -72,7 +72,7 @@ impl RabbitClient {
 
         info!("Queue declared successfully");
 
-        Ok(RabbitClient::new(conn, channel, queue_name, consumer_tag))
+        Ok(RabbitDriver::new(conn, channel, queue_name, consumer_tag))
     }
 
     /// Publishes a message to the declared queue.
