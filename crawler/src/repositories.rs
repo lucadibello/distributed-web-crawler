@@ -1,4 +1,4 @@
-pub mod urls;
+pub mod urlrepository;
 
 use async_trait::async_trait;
 use drivers::errors::DriverError;
@@ -15,3 +15,6 @@ where
     async fn remove(&self, key: K) -> Result<(), DriverError>;
     async fn exists(&self, key: K) -> Result<bool, DriverError>;
 }
+
+// re-export all repositories here
+pub use urlrepository::UrlRepository;

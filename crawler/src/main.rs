@@ -1,7 +1,9 @@
 mod clients;
+mod controllers;
 mod crawler;
 mod repositories;
 mod requests;
+mod services;
 mod validators;
 
 use std::sync::Arc;
@@ -10,8 +12,6 @@ use crawler::Crawler;
 use drivers::redis::RedisDriver;
 use tokio::sync::Mutex;
 use tracing::info;
-
-use crate::repositories::urls::UrlRepository;
 
 #[tokio::main]
 async fn main() {
@@ -72,8 +72,11 @@ async fn main() {
     let mut handles = Vec::new();
     let mut id_counter: u16 = 1;
 
-    // borrow mutable reference to redis driver (needed for the repository)
-    let repository = Arc::new(UrlRepository::new(Arc::new(Mutex::new(redis))));
+    // create UrlController to mark visited URLs
+    // NOTE: we use two Arc here because both UrlController and RedisDriver may be shared
+    // independently across multiple agents (e.g. each agent currently has one UrlController, but
+    // in the future we may want to have multiple controllers based on the same driver.
+    let url_controller = Arc::new(controllers::UrlController::new(Arc::new(Mutex::new(redis))));
 
     for chunk in seeds.chunks(chunk_size) {
         // Convert the chunk of seeds (which are String) into Vec<&str> for the agent.
@@ -83,14 +86,14 @@ async fn main() {
         let current_id = id_counter;
         let crawler_type = crawler_type.clone();
         let log_name = format!("crawler-{crawler_type}-{current_id}");
-        let agent_url_repo = Arc::clone(&repository);
+        let agent_url_controller = Arc::clone(&url_controller);
 
-        // start the agent in a separate task
+        // start the agent in a separate tas
         let handle = tokio::task::spawn(async move {
             // create new crawler instance
             let mut agent = Crawler::new(
                 log_name,
-                agent_url_repo,
+                agent_url_controller,
                 respect_robots_txt,
                 max_depth,
                 seeds_chunk,

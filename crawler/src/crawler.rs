@@ -1,6 +1,6 @@
 use crate::{
     clients::robots::RobotsTxtClient,
-    repositories::urls::UrlRepository,
+    controllers::{urlcontroller::UrlControllerTrait, UrlController},
     requests::{
         http::{HttpRequest, HttpResponse, PageData},
         request::Request,
@@ -8,21 +8,22 @@ use crate::{
 };
 use std::{collections::LinkedList, sync::Arc};
 use tracing::{debug, error, info, instrument, warn};
+use url::Url;
 
 pub struct Crawler {
     name: String,
     queue: LinkedList<HttpRequest>,
-    url_repository: Arc<UrlRepository>,
+    url_controller: Arc<UrlController>,
     robots_client: RobotsTxtClient,
     max_depth: u32,
     respect_robots_txt: bool,
 }
 
 impl Crawler {
-    #[instrument(skip(url_repository))]
+    #[instrument(skip(url_controller))]
     pub fn new(
         name: String,
-        url_repository: Arc<UrlRepository>,
+        url_controller: Arc<UrlController>,
         respect_robots_txt: bool,
         max_depth: u32,
         seed: Vec<&str>,
@@ -30,7 +31,7 @@ impl Crawler {
         let mut agent = Crawler {
             name,
             queue: LinkedList::<HttpRequest>::new(),
-            url_repository,
+            url_controller,
             robots_client: RobotsTxtClient::new(),
             max_depth,
             respect_robots_txt,
@@ -78,36 +79,32 @@ impl Crawler {
 
         // Enroll discovered links into the queue.
         if req.depth < self.max_depth {
-            debug!("Response links will be processed for URL: {}", req.target);
-            // if let Some(extra) = &res.extra {
-            //     debug!("Found {} links", extra.links.len());
-            //     let mut prioritized_links = Vec::new();
-            //     let mut other_links = Vec::new();
-            //
-            //     for link in &extra.links {
-            //         if self.redis_conn.is_visited(link.as_str()).unwrap() {
-            //             debug!("Link already visited: {}", link);
-            //             continue;
-            //         }
-            //         self.redis_conn.mark_visited(link.as_str()).unwrap();
-            //
-            //         if self.keywords.iter().any(|keyword| link.contains(keyword)) {
-            //             prioritized_links.push(link.clone());
-            //         } else {
-            //             other_links.push(link.clone());
-            //         }
-            //     }
-            //
-            //     for link in prioritized_links {
-            //         debug!("Enqueueing prioritized link: {}", link);
-            //         self.push(HttpRequest::new(link, req.depth + 1));
-            //     }
-            //
-            //     for link in other_links {
-            //         debug!("Enqueueing link: {}", link);
-            //         self.push(HttpRequest::new(link, req.depth + 1));
-            //     }
-            // }
+            if let Some(extra) = &res.extra {
+                debug!("Found {} links", extra.links.len());
+                // parse the Url to ensure it's valid
+                let target_url =
+                    Url::parse(&req.target).map_err(|e| format!("Invalid URL: {e}"))?;
+
+                // check if url is already visited
+                if let Ok(visited) = self.url_controller.is_visited(target_url.clone()).await {
+                    if visited {
+                        info!("URL already visited: {}", target_url);
+                        return Ok(res);
+                    }
+                } else {
+                    error!("Error checking if URL is visited: {}", target_url);
+                }
+
+                // otherwise, mark it as visited
+                if let Err(err) = self.url_controller.mark_visited(target_url).await {
+                    error!("Error marking URL as visited: {}", err);
+                }
+
+                // now, we need to process the links found during the crawl
+                for link in extra.links.iter() {
+                    self.push(HttpRequest::new(link.clone(), req.depth + 1));
+                }
+            }
         } else {
             warn!(
                 "Max depth reached for {}. Not enqueuing new links.",
@@ -125,10 +122,6 @@ impl Crawler {
             links: res.extra.as_ref().unwrap().links.clone(),
             body: res.extra.as_ref().unwrap().body.clone(),
         };
-        let payload = serde_json::to_string(&page_data).unwrap();
-
-        // FIXME: send payload to Apache Storm
-        debug!("Sending page data to the message queue: {}", payload);
 
         // Return the response.
         Ok(res)
