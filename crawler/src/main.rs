@@ -9,7 +9,7 @@ mod validators;
 use std::sync::Arc;
 
 use crawler::Crawler;
-use drivers::redis::RedisDriver;
+use drivers::{rabbit::RabbitDriver, redis::RedisDriver};
 use tokio::sync::Mutex;
 use tracing::info;
 
@@ -23,6 +23,11 @@ async fn main() {
 
     // connect to Redis
     let redis = RedisDriver::build().expect("Failed to build Redis client");
+
+    // connect to RabbitMQ
+    let rabbit = RabbitDriver::build()
+        .await
+        .expect("Failed to build RabbitMQ client");
 
     // Fetch crawler type from environment variable or default to "default"
     let crawler_type = std::env::var("CRAWLER_TYPE").unwrap_or_else(|_| "default".to_string());
@@ -78,6 +83,9 @@ async fn main() {
     // in the future we may want to have multiple controllers based on the same driver.
     let url_controller = Arc::new(controllers::UrlController::new(Arc::new(Mutex::new(redis))));
 
+    // wrap RabbitMQ driver in Arc to share it across multiple agents
+    let rabbit = Arc::new(rabbit);
+
     for chunk in seeds.chunks(chunk_size) {
         // Convert the chunk of seeds (which are String) into Vec<&str> for the agent.
         let seeds_chunk: Vec<&str> = chunk.to_vec();
@@ -87,6 +95,7 @@ async fn main() {
         let crawler_type = crawler_type.clone();
         let log_name = format!("crawler-{crawler_type}-{current_id}");
         let agent_url_controller = Arc::clone(&url_controller);
+        let rabbit = Arc::clone(&rabbit);
 
         // start the agent in a separate tas
         let handle = tokio::task::spawn(async move {
@@ -94,6 +103,7 @@ async fn main() {
             let mut agent = Crawler::new(
                 log_name,
                 agent_url_controller,
+                rabbit,
                 respect_robots_txt,
                 max_depth,
                 seeds_chunk,

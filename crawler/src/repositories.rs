@@ -5,6 +5,7 @@ use drivers::errors::DriverError;
 use serde::Serialize;
 
 #[async_trait]
+#[allow(dead_code)]
 pub trait Repository<K, V>
 where
     K: AsRef<str> + Send + Sync + 'static,

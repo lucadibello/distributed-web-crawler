@@ -6,6 +6,7 @@ use crate::{
         request::Request,
     },
 };
+use drivers::rabbit::RabbitDriver;
 use std::{collections::LinkedList, sync::Arc};
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
@@ -14,16 +15,18 @@ pub struct Crawler {
     name: String,
     queue: LinkedList<HttpRequest>,
     url_controller: Arc<UrlController>,
+    rabbit: Arc<RabbitDriver>,
     robots_client: RobotsTxtClient,
     max_depth: u32,
     respect_robots_txt: bool,
 }
 
 impl Crawler {
-    #[instrument(skip(url_controller))]
+    #[instrument(skip(url_controller, rabbit, seed), fields(name = %name))]
     pub fn new(
         name: String,
         url_controller: Arc<UrlController>,
+        rabbit: Arc<RabbitDriver>,
         respect_robots_txt: bool,
         max_depth: u32,
         seed: Vec<&str>,
@@ -32,6 +35,7 @@ impl Crawler {
             name,
             queue: LinkedList::<HttpRequest>::new(),
             url_controller,
+            rabbit,
             robots_client: RobotsTxtClient::new(),
             max_depth,
             respect_robots_txt,
@@ -123,7 +127,13 @@ impl Crawler {
             body: res.extra.as_ref().unwrap().body.clone(),
         };
 
-        // Return the response.
+        // enqueue the page data to RabbitMQ for further processing
+        self.rabbit
+            .enqueue(serde_json::to_string(&page_data).map_err(|e| e.to_string())?)
+            .await
+            .map_err(|e| format!("RabbitMQ enqueue error: {e}"))?;
+
+        // Return the response (useful for logging)
         Ok(res)
     }
 
