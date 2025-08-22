@@ -148,11 +148,12 @@ impl RabbitDriver {
         skip(self, on_message),
         fields(rabbit.queue = %self.queue_name, rabbit.consumer_tag = %self.consumer_tag)
     )]
-    pub async fn consume<F>(&self, on_message: F) -> Result<(), String>
+    pub async fn consume<F, V>(&self, on_message: F) -> Result<(), String>
     where
         // thread-safe function that receives the message payload, and returns Ok(()) on success or
         // Err(String) on failure
-        F: Fn(Vec<u8>) -> Result<(), String> + Send + Sync + 'static,
+        F: Fn(V) -> Result<(), String> + Send + Sync + 'static,
+        V: serde::de::DeserializeOwned + 'static,
     {
         info!("Starting consumer");
         let mut consumer = self
@@ -169,6 +170,7 @@ impl RabbitDriver {
                 format!("Failed to start consumer: {e}")
             })?;
 
+        info!("Consumer started, waiting for messages...");
         while let Some(delivery) = consumer.next().await {
             let delivery = match delivery {
                 Ok(d) => d,
@@ -192,8 +194,26 @@ impl RabbitDriver {
             debug!("Received message");
             trace!("Payload size: {} bytes", delivery.data.len());
 
+            // deserialize message to expected type
+            let actual_data: V = match serde_json::from_slice::<V>(&delivery.data) {
+                Ok(v) => v,
+                Err(e) => {
+                    error!("Deserialization failed for tag {}: {}", tag, e);
+                    if let Err(e2) = delivery
+                        .nack(BasicNackOptions {
+                            requeue: false,
+                            ..Default::default()
+                        })
+                        .await
+                    {
+                        error!("Nack failed after deserialization error '{}': {}", e, e2);
+                    }
+                    return Err(format!("Failed to deserialize message for tag {tag}: {e}"));
+                }
+            };
+
             // check result of handler
-            match on_message(delivery.data.clone()) {
+            match on_message(actual_data) {
                 Ok(_) => {
                     delivery
                         .ack(BasicAckOptions::default())
