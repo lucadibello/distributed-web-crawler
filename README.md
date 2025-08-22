@@ -6,7 +6,7 @@ Each process manages its own crawling tasks locally. Redis ensures URL deduplica
 
 ---
 
-## Features (Implemented)
+## Features
 
 - Concurrency: spawns multiple crawler agents in a single process using Tokio (`N_AGENTS`).
 - Seeds: loads seed URLs from `crawler/seeds/*.txt` (one URL per line) or falls back to defaults.
