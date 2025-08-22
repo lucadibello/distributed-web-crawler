@@ -2,11 +2,12 @@ use crate::{
     clients::robots::RobotsTxtClient,
     controllers::{urlcontroller::UrlControllerTrait, UrlController},
     requests::{
-        http::{HttpRequest, HttpResponse, PageData},
+        http::{HttpRequest, HttpResponse},
         request::Request,
     },
 };
 use drivers::rabbit::RabbitDriver;
+use models::PageData;
 use std::{collections::LinkedList, sync::Arc};
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
@@ -129,7 +130,7 @@ impl Crawler {
 
         // enqueue the page data to RabbitMQ for further processing
         self.rabbit
-            .enqueue(serde_json::to_string(&page_data).map_err(|e| e.to_string())?)
+            .enqueue(page_data)
             .await
             .map_err(|e| format!("RabbitMQ enqueue error: {e}"))?;
 

@@ -29,17 +29,6 @@ pub struct HttpResponse {
     pub extra: Option<ExtraHttpResponseFields>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct PageData {
-    pub url: String,
-    pub title: String,
-    pub status_code: u16,
-    pub headers: Vec<String>,
-    pub meta: Vec<String>,
-    pub links: Vec<String>,
-    pub body: String,
-}
-
 impl Request for HttpRequest {
     type Output = HttpResponse;
 
